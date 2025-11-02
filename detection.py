@@ -1,4 +1,5 @@
 import glob
+import torch
 from ultralytics import YOLO
 import os
 from ultralytics.models.yolo.detect import DetectionPredictor
@@ -6,6 +7,9 @@ from tqdm import tqdm
 
 def generate_gt(model_checkpoint, path, output_folder):
     model = YOLO(model_checkpoint)
+    # use cuda if available
+    if torch.cuda.is_available():
+        model.to('cuda')
 
     for file in tqdm(glob.glob(path + "/**/*.jpg", recursive=True)):
         results = model(file, max_det=500, iou=0.1, conf=0.1, imgsz=1280, single_cls=True, agnostic_nms=True, save=False, show_labels=False, show_conf=False, show_boxes=True)
