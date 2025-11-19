@@ -1,4 +1,4 @@
-"""Evaluate OCR results against ground truth."""
+"""Generate labels for re-training character IDS recognizer"""
 
 from ast import List
 import logging
