@@ -4,6 +4,7 @@ from ast import List
 import logging
 from collections import defaultdict
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import imagesize
 import pandas as pd
@@ -81,6 +82,26 @@ def process_page(page_id: str, df: pd.DataFrame):
 
     return bboxes_gt
 
+def process_single_page(page_id, df):
+    """Wrapper for processing a single page."""
+    page_out_path = Config.OUTPUT_ROOT / f"{page_id}.txt"
+    if page_out_path.exists():
+        logger.info(f"Skipping {page_id} (already processed)")
+        return
+
+    # create output directory 
+    page_out_path.parent.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Processing page: {page_id}")
+    try:
+        bboxes_gt = process_page(page_id, df)
+        # write to file
+        with open(page_out_path, "w", encoding="utf-8") as f:
+            for pred, bbox, selection in bboxes_gt:
+                bbox_str = " ".join([f"{coord:.6f}" for coord in bbox])
+                f.write(f"{pred} {bbox_str} {selection}\n")
+    except Exception as e:
+        logger.error(f"Error processing {page_id}: {e}")
+
 def main():
     """Main evaluation function."""
     df = process_ocr_results(str(Config.OCR_RESULTS_CSV))
@@ -90,25 +111,15 @@ def main():
     page_ids = df["page_id"].unique()
     logger.info(f"Processing {len(page_ids)} pages")
     
-    for page_id in page_ids:
-        page_out_path = Config.OUTPUT_ROOT / f"{page_id}.txt"
-        if page_out_path.exists():
-            logger.info(f"Skipping {page_id} (already processed)")
-            continue
-
-        # create output directory 
-        page_out_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Processing page: {page_id}")
-        try:
-            bboxes_gt = process_page(page_id, df)
-            # write to file
-            with open(page_out_path, "w", encoding="utf-8") as f:
-                for pred, bbox, selection in bboxes_gt:
-                    bbox_str = " ".join([f"{coord:.6f}" for coord in bbox])
-                    f.write(f"{pred} {bbox_str} {selection}\n")
-
-        except Exception as e:
-            logger.error(f"Error processing {page_id}: {e}")
+    with ProcessPoolExecutor() as executor:
+        futures = {executor.submit(process_single_page, page_id, df): page_id for page_id in page_ids}
+        for future in as_completed(futures):
+            page_id = futures[future]
+            try:
+                future.result()
+            except Exception as e:
+                logger.error(f"Error in multiprocessing for page {page_id}: {e}")
+    
     logger.info("Generation completed")
 
 
