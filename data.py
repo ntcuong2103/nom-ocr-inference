@@ -2,7 +2,6 @@ from nom_ids_ocr.data import SeqVocab
 import numpy as np
 from torch.utils.data import Dataset
 from torchvision import transforms
-from torchvision.io import image
 from PIL import Image 
 from pathlib import Path
 import imagesize

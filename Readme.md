@@ -82,13 +82,15 @@ python eval.py
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/ntcuong2103/nom-ids-ocr.git
-   cd nom-ids-ocr
+   git clone https://github.com/ntcuong2103/nom-ids.git
+   cd nom-ids
+   git switch release
    ```
 
 2. Install dependencies:
    ```bash
-   pip install -r requirements.txt
+   cd nom-ids-ocr
+   pip install -e .
    ```
 
 ## Notes

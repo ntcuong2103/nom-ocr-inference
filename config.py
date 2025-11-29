@@ -35,7 +35,7 @@ class Config:
     YOLO_IMGSZ = 1280
     
     OCR_BEAM_SIZE = 3
-    OCR_MAX_LEN = 200
+    OCR_MAX_LEN = 63
     OCR_ALPHA = 1.0
     
     # Image processing

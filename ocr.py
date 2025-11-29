@@ -7,6 +7,7 @@ import argparse
 import csv
 from pathlib import Path
 from config import Config
+from tqdm import tqdm
 
 
 def load_vocab_and_ids_dict():
@@ -16,7 +17,7 @@ def load_vocab_and_ids_dict():
     
     ids_dict = {}
     with open(Config.IDS_EXP, 'r', encoding='utf-8') as f:
-        for line in f:
+        for line in tqdm(f, desc="Loading IDS dictionary", leave=False):
             parts = line.strip().split('\t')
             if len(parts) == 2:
                 ids_dict[parts[0]] = parts[1]
@@ -76,32 +77,36 @@ def run_inference(model, dataset, output_csv, beam_size=None, max_len=None,
         writer.writerow(["image_id", "predicted_text", "predicted_ids"])
         
         total_processed = 0
-        for batch_idx, batch in enumerate(dataset):
-            data = collate_fn([batch])
-            
-            for i in range(len(data.img_bases)):
-                with torch.no_grad():
-                    output = model.beam_search(
-                        data.imgs[i].to(device),
-                        beam_size=beam_size,
-                        max_len=max_len,
-                        alpha=alpha
-                    )
+        num_batches = len(dataset) if process_all else 1
+        
+        with tqdm(total=num_batches, desc="Processing batches", unit="batch") as batch_pbar:
+            for batch_idx, batch in enumerate(dataset):
+                data = collate_fn([batch])
+                data.imgs = data.imgs.to(device)
                 
-                decoded_text = dataset.vocab.decode(output)
-                decoded_ids = ''.join([dataset.vocab.id2char[c] for c in output])
-                img_id = data.img_bases[i]
+                with tqdm(total=len(data.img_bases), desc=f"Batch {batch_idx + 1}", unit="img", leave=False) as img_pbar:
+                    for i in range(len(data.img_bases)):
+                        with torch.no_grad():
+                            output = model.beam_search(
+                                data.imgs[i],
+                                beam_size=beam_size,
+                                max_len=max_len,
+                                alpha=alpha
+                            )
+                        
+                        decoded_text = dataset.vocab.decode(output)
+                        decoded_ids = ''.join([dataset.vocab.id2char[c] for c in output])
+                        img_id = data.img_bases[i]
+                        
+                        total_processed += 1
+                        writer.writerow([img_id, decoded_text, decoded_ids])
+                        img_pbar.update(1)
                 
-                total_processed += 1
-                print(f"[{total_processed}] Image ID: {img_id}")
-                print(f"  Predicted Text: {decoded_text}")
-                print(f"  Predicted IDS: {decoded_ids}")
+                batch_pbar.update(1)
                 
-                writer.writerow([img_id, decoded_text, decoded_ids])
-            
-            if not process_all:
-                print(f"\nProcessed first batch only ({total_processed} images)")
-                break
+                if not process_all:
+                    print(f"\nProcessed first batch only ({total_processed} images)")
+                    break
         
         if process_all:
             print(f"\nProcessed all images ({total_processed} total)")
