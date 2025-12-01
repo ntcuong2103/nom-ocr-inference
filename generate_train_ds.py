@@ -5,10 +5,12 @@ import logging
 from collections import defaultdict
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import argparse
 
 import imagesize
 import pandas as pd
 import numpy as np
+from tqdm import tqdm
 
 from config import Config
 from utils import process_ocr_results, parse_line_labels, is_inside, load_yolo_bboxes
@@ -104,8 +106,15 @@ def process_single_page(page_id, df):
 
 def main():
     """Main evaluation function."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--log-level", default="INFO", help="Set the logging level (e.g., INFO, WARNING, ERROR)")
+    args = parser.parse_args()
+    
+    logging.basicConfig(level=getattr(logging, args.log_level.upper()), format='%(asctime)s - %(levelname)s - %(message)s')
+    logger.setLevel(getattr(logging, args.log_level.upper()))
+    
     df = process_ocr_results(str(Config.OCR_RESULTS_CSV))
-    Config.OUTPUT_ROOT = Path("nomnaocr_labels")
+    Config.OUTPUT_ROOT = Path("nomnaocr_labels_v1")
     Config.OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     
     page_ids = df["page_id"].unique()
@@ -113,7 +122,7 @@ def main():
     
     with ProcessPoolExecutor() as executor:
         futures = {executor.submit(process_single_page, page_id, df): page_id for page_id in page_ids}
-        for future in as_completed(futures):
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Processing pages"):
             page_id = futures[future]
             try:
                 future.result()

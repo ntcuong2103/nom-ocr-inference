@@ -1,17 +1,19 @@
 """Evaluate OCR results against ground truth."""
 
 import logging
+import argparse
 from collections import defaultdict
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import imagesize
 import pandas as pd
 import numpy as np
+from tqdm import tqdm
 
 from config import Config
 from utils import process_ocr_results, parse_line_labels, is_inside, load_yolo_bboxes
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
@@ -72,27 +74,44 @@ def process_page(page_id: str, df: pd.DataFrame) -> pd.DataFrame:
     })
 
 
+def process_single_page(page_id, df):
+    """Wrapper for processing a single page."""
+    page_out_path = Config.OUTPUT_ROOT / f"{page_id}.csv"
+    if page_out_path.exists():
+        logger.info(f"Skipping {page_id} (already processed)")
+        return
+
+    logger.info(f"Processing page: {page_id}")
+    try:
+        page_df = process_page(page_id, df)
+        page_out_path.parent.mkdir(parents=True, exist_ok=True)
+        page_df.to_csv(page_out_path, index=False, encoding="utf-8")
+    except Exception as e:
+        logger.error(f"Error processing {page_id}: {e}")
+
 def main():
     """Main evaluation function."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--log-level", default="INFO", help="Set the logging level (e.g., INFO, WARNING, ERROR)")
+    args = parser.parse_args()
+    
+    logging.basicConfig(level=getattr(logging, args.log_level.upper()), format='%(asctime)s - %(levelname)s - %(message)s')
+    logger.setLevel(getattr(logging, args.log_level.upper()))
+    
     df = process_ocr_results(str(Config.OCR_RESULTS_CSV))
     Config.OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     
     page_ids = df["page_id"].unique()
     logger.info(f"Processing {len(page_ids)} pages")
     
-    for page_id in page_ids:
-        page_out_path = Config.OUTPUT_ROOT / f"{page_id}.csv"
-        if page_out_path.exists():
-            logger.info(f"Skipping {page_id} (already processed)")
-            continue
-
-        logger.info(f"Processing page: {page_id}")
-        try:
-            page_df = process_page(page_id, df)
-            page_out_path.parent.mkdir(parents=True, exist_ok=True)
-            page_df.to_csv(page_out_path, index=False, encoding="utf-8")
-        except Exception as e:
-            logger.error(f"Error processing {page_id}: {e}")
+    with ProcessPoolExecutor() as executor:
+        futures = {executor.submit(process_single_page, page_id, df): page_id for page_id in page_ids}
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Processing pages"):
+            page_id = futures[future]
+            try:
+                future.result()
+            except Exception as e:
+                logger.error(f"Error in multiprocessing for page {page_id}: {e}")
     
     logger.info("Evaluation completed")
 
