@@ -53,6 +53,7 @@ def process_page(page_id: str, df: pd.DataFrame) -> pd.DataFrame:
     # Process each line
     predicted_texts = []
     ground_truth_texts = []
+    variants_counts = []
     
     for line_idx, line_label in enumerate(line_labels):
         bboxes_ids = line_to_bboxes[line_idx]
@@ -63,7 +64,8 @@ def process_page(page_id: str, df: pd.DataFrame) -> pd.DataFrame:
             row = df[(df["page_id"] == page_id) & (df["bbox_id"] == bbox_id)]
             if not row.empty:
                 texts.append(row.iloc[0]["predicted_text"])
-
+        variants_count = sum(map(len, texts)) - len(texts)
+        variants_counts.append(variants_count)
         predicted_texts.append("".join(texts))
         ground_truth_texts.append(line_label["label"])
     
@@ -71,12 +73,13 @@ def process_page(page_id: str, df: pd.DataFrame) -> pd.DataFrame:
         "page_id": page_id,
         "predicted_text": predicted_texts,
         "ground_truth_text": ground_truth_texts,
+        "variants_count": variants_counts
     })
 
 
-def process_single_page(page_id, df):
+def process_single_page(page_id, df, output_root):
     """Wrapper for processing a single page."""
-    page_out_path = Config.OUTPUT_ROOT / f"{page_id}.csv"
+    page_out_path = output_root / f"{page_id}.csv"
     if page_out_path.exists():
         logger.info(f"Skipping {page_id} (already processed)")
         return
@@ -93,19 +96,23 @@ def main():
     """Main evaluation function."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--log-level", default="INFO", help="Set the logging level (e.g., INFO, WARNING, ERROR)")
+    parser.add_argument("--output-root", default=str(Config.OUTPUT_ROOT), help="Output directory for evaluation results")
+    parser.add_argument("--ocr-csv", default=str(Config.OCR_RESULTS_CSV), help="Path to OCR results CSV file")
+
     args = parser.parse_args()
     
     logging.basicConfig(level=getattr(logging, args.log_level.upper()), format='%(asctime)s - %(levelname)s - %(message)s')
     logger.setLevel(getattr(logging, args.log_level.upper()))
     
-    df = process_ocr_results(str(Config.OCR_RESULTS_CSV))
-    Config.OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    df = process_ocr_results(str(args.ocr_csv))
+    args.output_root = Path(args.output_root)
+    args.output_root.mkdir(parents=True, exist_ok=True)
     
     page_ids = df["page_id"].unique()
     logger.info(f"Processing {len(page_ids)} pages")
     
-    with ProcessPoolExecutor() as executor:
-        futures = {executor.submit(process_single_page, page_id, df): page_id for page_id in page_ids}
+    with ProcessPoolExecutor(max_workers=32) as executor:
+        futures = {executor.submit(process_single_page, page_id, df, args.output_root): page_id for page_id in page_ids}
         for future in tqdm(as_completed(futures), total=len(futures), desc="Processing pages"):
             page_id = futures[future]
             try:

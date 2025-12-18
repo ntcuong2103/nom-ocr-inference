@@ -41,7 +41,7 @@ def _decode_output(args):
     # Convert comma-separated string to list of integers
     output = [int(x) for x in output_str.split(',')]
     
-    decoded_text = vocab.decode(output)
+    decoded_text = ''.join(vocab.decode(output))
     decoded_ids = ''.join([vocab.id2char[c] for c in output])
     
     return img_id, decoded_text, decoded_ids
