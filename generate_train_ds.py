@@ -79,8 +79,15 @@ def process_page(page_id: str, df: pd.DataFrame):
             pred = row.iloc[0]["predicted_text"]
             line_idx = bbox_to_line.get(bbox_id, None)
             if line_idx is not None:
-                selection = 1 if pred in lcs_strings[line_idx] else 0
-                bboxes_gt.append((pred, bboxes_fp[bbox_id], selection))
+                selection = 0
+                selected_char = pred[0] if len(pred) > 0 else ""
+                for char in pred:
+                    if char in lcs_strings[line_idx]:
+                        selection = 1
+                        selected_char = char
+                        break
+                
+                bboxes_gt.append((selected_char, bboxes_fp[bbox_id], selection))
 
     return bboxes_gt
 
@@ -120,7 +127,7 @@ def main():
     page_ids = df["page_id"].unique()
     logger.info(f"Processing {len(page_ids)} pages")
     
-    with ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor(max_workers=32) as executor:
         futures = {executor.submit(process_single_page, page_id, df): page_id for page_id in page_ids}
         for future in tqdm(as_completed(futures), total=len(futures), desc="Processing pages"):
             page_id = futures[future]
