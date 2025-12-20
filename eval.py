@@ -17,12 +17,12 @@ from utils import process_ocr_results, parse_line_labels, is_inside, load_yolo_b
 logger = logging.getLogger(__name__)
 
 
-def process_page(page_id: str, df: pd.DataFrame) -> pd.DataFrame:
+def process_page(page_id: str, page_df_dict: dict) -> pd.DataFrame:
     """Process a single page and match predictions to ground truth.
     
     Args:
         page_id: Page identifier
-        df: DataFrame containing OCR predictions
+        page_df_dict: Dictionary mapping bbox_id to prediction data for this page
         
     Returns:
         DataFrame with predicted and ground truth texts for the page
@@ -61,9 +61,8 @@ def process_page(page_id: str, df: pd.DataFrame) -> pd.DataFrame:
 
         texts = []
         for bbox_id in bboxes_ids:
-            row = df[(df["page_id"] == page_id) & (df["bbox_id"] == bbox_id)]
-            if not row.empty:
-                texts.append(row.iloc[0]["predicted_text"])
+            if bbox_id in page_df_dict:
+                texts.append(page_df_dict[bbox_id]["predicted_text"])
         variants_count = sum(map(len, texts)) - len(texts)
         variants_counts.append(variants_count)
         predicted_texts.append("".join(texts))
@@ -77,7 +76,7 @@ def process_page(page_id: str, df: pd.DataFrame) -> pd.DataFrame:
     })
 
 
-def process_single_page(page_id, df, output_root):
+def process_single_page(page_id, page_df_dict, output_root):
     """Wrapper for processing a single page."""
     page_out_path = output_root / f"{page_id}.csv"
     if page_out_path.exists():
@@ -86,7 +85,7 @@ def process_single_page(page_id, df, output_root):
 
     logger.info(f"Processing page: {page_id}")
     try:
-        page_df = process_page(page_id, df)
+        page_df = process_page(page_id, page_df_dict)
         page_out_path.parent.mkdir(parents=True, exist_ok=True)
         page_df.to_csv(page_out_path, index=False, encoding="utf-8")
     except Exception as e:
@@ -111,8 +110,18 @@ def main():
     page_ids = df["page_id"].unique()
     logger.info(f"Processing {len(page_ids)} pages")
     
+    # Pre-process: group by page_id and convert to dict for fast lookup
+    page_data = {}
+    for page_id in tqdm(page_ids, desc="Preprocessing pages"):
+        page_df = df[df["page_id"] == page_id]
+        # Create a dict with bbox_id as key for O(1) lookup
+        page_data[page_id] = {
+            row["bbox_id"]: {"predicted_text": row["predicted_text"]}
+            for _, row in page_df.iterrows()
+        }
+    
     with ProcessPoolExecutor(max_workers=32) as executor:
-        futures = {executor.submit(process_single_page, page_id, df, args.output_root): page_id for page_id in page_ids}
+        futures = {executor.submit(process_single_page, page_id, page_data[page_id], args.output_root): page_id for page_id in page_ids}
         for future in tqdm(as_completed(futures), total=len(futures), desc="Processing pages"):
             page_id = futures[future]
             try:

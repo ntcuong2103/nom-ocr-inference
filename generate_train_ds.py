@@ -20,15 +20,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-def process_page(page_id: str, df: pd.DataFrame):
+def process_page(page_id: str, page_df_dict: dict):
     """Process a single page and match predictions to ground truth.
     
     Args:
         page_id: Page identifier
-        df: DataFrame containing OCR predictions
+        page_df_dict: Dictionary mapping bbox_id to prediction data for this page
         
     Returns:
-        DataFrame with predicted and ground truth texts for the page
+        List of tuples with predicted characters, bboxes, and selection flags
     """
     detection_file = Config.DETECTION_LABELS / f"{page_id}.txt"
     image_file = Config.IMAGE_ROOT / f"{page_id}.jpg"
@@ -60,9 +60,8 @@ def process_page(page_id: str, df: pd.DataFrame):
 
         texts = []
         for bbox_id in bboxes_ids:
-            row = df[(df["page_id"] == page_id) & (df["bbox_id"] == bbox_id)]
-            if not row.empty:
-                texts.append(row.iloc[0]["predicted_text"])
+            if bbox_id in page_df_dict:
+                texts.append(page_df_dict[bbox_id]["predicted_text"])
 
         predicted_text = "".join(texts)
         ground_truth_text = line_label["label"]
@@ -74,9 +73,8 @@ def process_page(page_id: str, df: pd.DataFrame):
 
 
     for bbox_id in range(len(bboxes)):
-        row = df[(df["page_id"] == page_id) & (df["bbox_id"] == bbox_id)]
-        if not row.empty:
-            pred = row.iloc[0]["predicted_text"]
+        if bbox_id in page_df_dict:
+            pred = page_df_dict[bbox_id]["predicted_text"]
             line_idx = bbox_to_line.get(bbox_id, None)
             if line_idx is not None:
                 selection = 0
@@ -91,7 +89,7 @@ def process_page(page_id: str, df: pd.DataFrame):
 
     return bboxes_gt
 
-def process_single_page(page_id, df):
+def process_single_page(page_id, page_df_dict):
     """Wrapper for processing a single page."""
     page_out_path = Config.OUTPUT_ROOT / f"{page_id}.txt"
     if page_out_path.exists():
@@ -102,7 +100,7 @@ def process_single_page(page_id, df):
     page_out_path.parent.mkdir(parents=True, exist_ok=True)
     logger.info(f"Processing page: {page_id}")
     try:
-        bboxes_gt = process_page(page_id, df)
+        bboxes_gt = process_page(page_id, page_df_dict)
         # write to file
         with open(page_out_path, "w", encoding="utf-8") as f:
             for pred, bbox, selection in bboxes_gt:
@@ -127,8 +125,18 @@ def main():
     page_ids = df["page_id"].unique()
     logger.info(f"Processing {len(page_ids)} pages")
     
+    # Pre-process: group by page_id and convert to dict for fast lookup
+    page_data = {}
+    for page_id in tqdm(page_ids, desc="Preprocessing pages"):
+        page_df = df[df["page_id"] == page_id]
+        # Create a dict with bbox_id as key for O(1) lookup
+        page_data[page_id] = {
+            row["bbox_id"]: {"predicted_text": row["predicted_text"]}
+            for _, row in page_df.iterrows()
+        }
+    
     with ProcessPoolExecutor(max_workers=32) as executor:
-        futures = {executor.submit(process_single_page, page_id, df): page_id for page_id in page_ids}
+        futures = {executor.submit(process_single_page, page_id, page_data[page_id]): page_id for page_id in page_ids}
         for future in tqdm(as_completed(futures), total=len(futures), desc="Processing pages"):
             page_id = futures[future]
             try:
