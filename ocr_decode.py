@@ -2,11 +2,11 @@
 
 from nom_ids_ocr.data import SeqVocab
 import argparse
-import csv
 from pathlib import Path
 from config import Config
 from tqdm import tqdm
 from multiprocessing import Pool
+import pandas as pd
 
 
 def load_vocab_and_ids_dict():
@@ -28,12 +28,12 @@ def _decode_output(args):
     """Helper function for multiprocessing decoding.
     
     Args:
-        args: tuple of (img_id, output_str, vocab_dict, base_vocab)
+        args: tuple of (output_str, vocab_dict, base_vocab)
     
     Returns:
-        tuple of (img_id, decoded_text, decoded_ids)
+        tuple of (decoded_text, decoded_ids)
     """
-    img_id, output_str, vocab_dict, base_vocab = args
+    output_str, vocab_dict, base_vocab = args
     
     # Recreate SeqVocab instance for this process
     vocab = SeqVocab(base_vocab, vocab_dict)
@@ -44,22 +44,24 @@ def _decode_output(args):
     decoded_text = ''.join(vocab.decode(output))
     decoded_ids = ''.join([vocab.id2char[c] for c in output])
     
-    return img_id, decoded_text, decoded_ids
+    return output_str, decoded_text, decoded_ids
 
 
 def run_decoding(input_txt, output_csv, vocab_dict, base_vocab, num_workers=4):
-    """Load inference outputs and decode using multiprocessing."""
-    # Load outputs from text file
-    print(f"\nLoading inference outputs from {input_txt}...")
-    outputs_data = []
-    with open(input_txt, 'r', encoding='utf-8') as f:
-        for line in f:
-            parts = line.strip().split('\t')
-            if len(parts) == 2:
-                img_id, output_str = parts
-                outputs_data.append((img_id, output_str))
+    """Load inference outputs and decode using multiprocessing.
     
-    print(f"Loaded {len(outputs_data)} outputs")
+    Optimized to decode only unique output strings, then map results back to image IDs.
+    """
+
+    ocr_df = pd.read_csv(input_txt, sep='\t', header=None, names=['image_id', 'output_str'])
+
+    print(f"Loaded {len(ocr_df)} outputs")
+    
+    # get unique output strings
+    unique_outputs = ocr_df.output_str.unique()
+    unique_count = len(unique_outputs)
+    dedup_ratio = len(ocr_df) / unique_count if unique_count > 0 else 1
+    print(f"Found {unique_count} unique output strings (deduplication ratio: {dedup_ratio:.2f}x)")
     
     # Ensure output directory exists
     output_path = Path(output_csv)
@@ -68,25 +70,35 @@ def run_decoding(input_txt, output_csv, vocab_dict, base_vocab, num_workers=4):
     print("\nStage 2: Parallel decoding")
     print("-" * 60)
     
-    # Prepare arguments for multiprocessing
+    # Prepare arguments for multiprocessing with unique output strings only
     decode_args = [
-        (img_id, output_str, vocab_dict, base_vocab)
-        for img_id, output_str in outputs_data
+        (output_str, vocab_dict, base_vocab)
+        for output_str in unique_outputs
     ]
     
-    with open(output_path, mode='w', encoding='utf-8', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(["image_id", "predicted_text", "predicted_ids"])
-        
-        # Use multiprocessing pool for decoding
-        with Pool(num_workers) as pool:
-            with tqdm(total=len(decode_args), desc="Decoding", unit="img") as pbar:
-                for img_id, decoded_text, decoded_ids in pool.imap_unordered(_decode_output, decode_args):
-                    writer.writerow([img_id, decoded_text, decoded_ids])
-                    pbar.update(1)
+    # Decode unique outputs and store results
+    decoded_map = {}  # output_str -> (decoded_text, decoded_ids)
     
-    print(f"\nProcessed {len(outputs_data)} images total")
-    print(f"\nResults written to: {output_path}")
+    with Pool(num_workers) as pool:
+        with tqdm(total=len(decode_args), desc="Decoding unique strings", unit="str") as pbar:
+            for output_str, decoded_text, decoded_ids in pool.imap_unordered(_decode_output, decode_args):
+                decoded_map[output_str] = (decoded_text, decoded_ids)
+                pbar.update(1)
+    
+    # create columns for decoded results
+    ocr_df['predicted_text'] = ocr_df['output_str'].map(lambda x: decoded_map[x][0])
+    ocr_df['predicted_ids'] = ocr_df['output_str'].map(lambda x: decoded_map[x][1])
+    
+    # Write results to CSV
+    ocr_df.to_csv(
+        output_csv,
+        columns=['image_id', 'predicted_text', 'predicted_ids'],
+        index=False,
+        encoding='utf-8'
+    )
+
+    print(f"\nProcessed {len(ocr_df)} images total ({unique_count} unique strings decoded)")
+    print(f"Results written to: {output_path}")
 
 
 def parse_arguments():
