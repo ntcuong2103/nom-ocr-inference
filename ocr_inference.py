@@ -169,9 +169,8 @@ def parse_arguments():
         "--device",
         dest="device",
         type=str,
-        choices=['cuda', 'cpu'],
         default='cuda',
-        help="Device to run inference on",
+        help="Device to run inference on (e.g., 'cuda', 'cuda:0', 'cuda:1', 'cpu')",
     )
     parser.add_argument(
         "--process-all",
