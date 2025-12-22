@@ -3,7 +3,7 @@
 from nom_ids_ocr.data import SeqVocab, collate_fn
 from nom_ids_ocr.lit_trainer import LitBTTR
 import torch
-from data import ImageDataset
+from data import ImageDatasetBBox
 from torchvision import transforms
 import argparse
 from pathlib import Path
@@ -110,6 +110,57 @@ def run_beam_search(model, dataset, output_txt, beam_size=None, max_len=None,
     print(f"\nSaved {num_outputs} outputs to: {output_path}")
 
 
+def run_greedy_search(model, dataloader, output_txt, max_len=None,
+                      alpha=None, device='cuda', process_all=False):
+    """Run greedy search inference in batch mode and save outputs to text file.
+
+    This mirrors run_beam_search but uses `model.greedy_search` on the full
+    batch tensor `[B, 3, H, W]` to decode all images in a batch at once.
+    """
+    # Use config defaults if not provided
+    max_len = max_len or Config.OCR_MAX_LEN
+    alpha = alpha or Config.OCR_ALPHA
+
+    # Ensure output directory exists
+    output_path = Path(output_txt)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    num_batches = len(dataloader) if process_all else 1
+    num_outputs = 0
+
+    print("\nStage 1: Greedy search inference (batched)")
+    print("-" * 60)
+
+    with open(output_path, mode='w', encoding='utf-8') as f:
+        with tqdm(total=num_batches, desc="Greedy search", unit="batch") as batch_pbar:
+            for batch_idx, data in enumerate(dataloader):
+                # data = collate_fn([batch])
+                data.imgs = data.imgs.to(device)
+
+                with torch.no_grad():
+                    decoded_seqs = model.greedy_search(
+                        data.imgs,
+                        max_len=max_len,
+                        alpha=alpha,
+                    )
+
+                # Write all results for this batch
+                with tqdm(total=len(data.img_bases), desc=f"Batch {batch_idx + 1}", unit="img", leave=False) as img_pbar:
+                    for i, img_id in enumerate(data.img_bases):
+                        seq = decoded_seqs[i]
+                        output_str = ','.join([str(int(x)) for x in seq])
+                        f.write(f"{img_id}\t{output_str}\n")
+                        num_outputs += 1
+                        img_pbar.update(1)
+
+                batch_pbar.update(1)
+
+                if not process_all:
+                    break
+
+    print(f"\nSaved {num_outputs} outputs to: {output_path}")
+
+
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -178,6 +229,21 @@ def parse_arguments():
         action="store_true",
         help="Process all images in dataset (default: process only first batch)",
     )
+    parser.add_argument(
+        "--num-workers",
+        dest="num_workers",
+        type=int,
+        default=32,
+        help="Number of workers for data loading",
+    )
+    parser.add_argument(
+        "--batch-size",
+        dest="batch_size",
+        type=int,
+        default=64,
+        help="Batch size for data loading",
+    )
+
     return parser.parse_args()
 
 
@@ -205,15 +271,24 @@ def main():
     
     # Create dataset
     print("\nCreating dataset...")
-    dataset = ImageDataset(
+    dataset = ImageDatasetBBox(
         image_dir=args.image_dir,
         label_dir=args.label_dir,
         vocab=vocab,
         transform=create_transforms(),
         expand_ratio=Config.BBOX_EXPAND_RATIO,
     )
-    print(f"Dataset created with {len(dataset)} images")
+
+    print(f"Dataset created with {len(dataset)} bboxes images")
     
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        collate_fn=collate_fn
+    )
+
     # Load model
     print("\nLoading model from checkpoint...")
     model = load_model(
@@ -224,11 +299,22 @@ def main():
     print("Model loaded successfully")
     
     # Run beam search
-    run_beam_search(
+    # run_beam_search(
+    #     model=model,
+    #     dataset=dataset,
+    #     output_txt=args.output_txt,
+    #     beam_size=args.beam_size,
+    #     max_len=args.max_len,
+    #     alpha=args.alpha,
+    #     device=args.device,
+    #     process_all=args.process_all
+    # )
+
+    # Alternatively, run greedy search in batch mode
+    run_greedy_search(
         model=model,
-        dataset=dataset,
+        dataloader=dataloader,
         output_txt=args.output_txt,
-        beam_size=args.beam_size,
         max_len=args.max_len,
         alpha=args.alpha,
         device=args.device,
@@ -236,7 +322,7 @@ def main():
     )
     
     print("=" * 60)
-    print("Beam search complete!")
+    print("Search complete!")
     print("=" * 60)
 
 

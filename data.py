@@ -163,7 +163,7 @@ class ImageDatasetBBox(Dataset):
             return None
         if self.transform:
             image_cropped = self.transform(image_cropped)
-        return f'{image_path}@{idx}', image_cropped, self.vocab.encode(cls)
+        return [f'{image_path}@{idx}'], [image_cropped], [self.vocab.encode(cls)]
 
 if __name__ == "__main__":
     base_vocab = open('vocab_ids.txt', 'r').read().split('\n')
