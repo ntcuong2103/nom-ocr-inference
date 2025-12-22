@@ -134,15 +134,15 @@ class ImageDatasetBBox(Dataset):
             bboxes = bboxes * np.array([width, height, width, height])
             bboxes = bboxes.astype(int)
 
-            for bbox, cls in zip(bboxes, classes):
+            for box_id, (bbox,cls) in enumerate(zip(bboxes, classes)):
                 if cls in self.vocab.ids_dict or cls == '0':
-                    self.bboxes_info.append((image_path, bbox, cls))
+                    self.bboxes_info.append((image_path, bbox, cls, box_id))
 
     def __len__(self):
         return len(self.bboxes_info)
 
     def __getitem__(self, idx):
-        image_path, bbox, cls = self.bboxes_info[idx]
+        image_path, bbox, cls, box_id = self.bboxes_info[idx]
         image = Image.open(image_path).convert('RGB')
         x, y, w_bbox, h_bbox = bbox
         
@@ -159,11 +159,11 @@ class ImageDatasetBBox(Dataset):
         image_cropped = image.crop((x1, y1, x2, y2))
         # check size of the cropped image
         if image_cropped.size[0] < 1 or image_cropped.size[1] < 1:
-            print(f"Invalid crop size for {image_path} at index {idx}. Skipping.")
+            print(f"Invalid crop size for {image_path} at index {box_id}. Skipping.")
             return None
         if self.transform:
             image_cropped = self.transform(image_cropped)
-        return [f'{image_path}@{idx}'], [image_cropped], [self.vocab.encode(cls)]
+        return [f'{image_path}@{box_id}'], [image_cropped], [self.vocab.encode(cls)]
 
 if __name__ == "__main__":
     base_vocab = open('vocab_ids.txt', 'r').read().split('\n')
