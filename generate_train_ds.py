@@ -20,6 +20,50 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
+def align_line_predictions(predictions_list: list, ground_truth_text: str) -> list:
+    """Align a list of predicted strings (one per bbox) with the ground truth text.
+    
+    Args:
+        predictions_list: List of predicted strings (e.g. ["明", "日"])
+        ground_truth_text: Ground truth line text (e.g. "明日")
+        
+    Returns:
+        List of tuples (is_matched, matched_char) corresponding to each prediction in predictions_list
+    """
+    m = len(predictions_list)
+    n = len(ground_truth_text)
+    
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+    for i in range(1, m + 1):
+        pred_str = predictions_list[i - 1]
+        for j in range(1, n + 1):
+            gt_char = ground_truth_text[j - 1]
+            if pred_str == gt_char:
+                dp[i][j] = 1 + dp[i - 1][j - 1]
+            else:
+                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+                
+    # Backtrack to find the matches
+    matched = [False] * m
+    matched_chars = [pred_str[0] if len(pred_str) > 0 else "" for pred_str in predictions_list]
+    
+    i, j = m, n
+    while i > 0 and j > 0:
+        pred_str = predictions_list[i - 1]
+        gt_char = ground_truth_text[j - 1]
+        if pred_str == gt_char:
+            matched[i - 1] = True
+            matched_chars[i - 1] = gt_char
+            i -= 1
+            j -= 1
+        elif dp[i - 1][j] > dp[i][j - 1]:
+            i -= 1
+        else:
+            j -= 1
+            
+    return list(zip(matched, matched_chars))
+
+
 def process_page(page_id: str, page_df_dict: dict):
     """Process a single page and match predictions to ground truth.
     
@@ -43,7 +87,8 @@ def process_page(page_id: str, page_df_dict: dict):
     bbox_to_line = {}
     
     x, y, w, h = bboxes[:, 0], bboxes[:, 1], bboxes[:, 2], bboxes[:, 3]
-    bbox_center = np.column_stack((x + w / 2, y + h / 2))
+    # In YOLO format, (x, y) are the actual center coordinates in pixels.
+    bbox_center = np.column_stack((x, y))
 
     for line_idx, line_label in enumerate(line_labels):
         for bbox_id in range(len(bboxes)):
@@ -53,38 +98,32 @@ def process_page(page_id: str, page_df_dict: dict):
                 line_to_bboxes[line_idx].append(bbox_id)
                 bbox_to_line[bbox_id] = line_idx
 
-    lcs_strings = []
+    bbox_to_selection = {}
+    bbox_to_selected_char = {}
+
     for line_idx, line_label in enumerate(line_labels):
         bboxes_ids = line_to_bboxes[line_idx]
         bboxes_ids = sorted(bboxes_ids, key=lambda bid: bbox_center[bid][1])
 
-        texts = []
+        predictions_list = []
         for bbox_id in bboxes_ids:
-            if bbox_id in page_df_dict:
-                texts.append(page_df_dict[bbox_id]["predicted_text"])
+            pred_text = page_df_dict[bbox_id]["predicted_text"] if bbox_id in page_df_dict else ""
+            predictions_list.append(pred_text)
 
-        predicted_text = "".join(texts)
-        ground_truth_text = line_label["label"]
-        lcs_strings.append(lcs_string(predicted_text, ground_truth_text))
-
+        alignment = align_line_predictions(predictions_list, line_label["label"])
+        for bid, (is_matched, matched_char) in zip(bboxes_ids, alignment):
+            bbox_to_selection[bid] = 1 if is_matched else 0
+            bbox_to_selected_char[bid] = matched_char
 
     bboxes_gt = []
     bboxes_fp = bboxes.astype(float) / np.array([width, height, width, height])
 
-
     for bbox_id in range(len(bboxes)):
         if bbox_id in page_df_dict:
-            pred = page_df_dict[bbox_id]["predicted_text"]
             line_idx = bbox_to_line.get(bbox_id, None)
             if line_idx is not None:
-                selection = 0
-                selected_char = pred[0] if len(pred) > 0 else ""
-                for char in pred:
-                    if char in lcs_strings[line_idx]:
-                        selection = 1
-                        selected_char = char
-                        break
-                
+                selection = bbox_to_selection.get(bbox_id, 0)
+                selected_char = bbox_to_selected_char.get(bbox_id, "")
                 bboxes_gt.append((selected_char, bboxes_fp[bbox_id], selection))
 
     return bboxes_gt

@@ -182,11 +182,11 @@ def parse_arguments():
         help="Path to images directory",
     )
     parser.add_argument(
-        "--labels",
-        dest="label_dir",
+        "--detection-labels",
+        dest="detection_label_dir",
         type=str,
-        default=str(Config.LINE_LABELS_ROOT),
-        help="Path to labels directory",
+        default=str(Config.DETECTION_LABELS),
+        help="Path to detection labels directory",
     )
     parser.add_argument(
         "--checkpoint",
@@ -243,6 +243,14 @@ def parse_arguments():
         default=64,
         help="Batch size for data loading",
     )
+    parser.add_argument(
+        "--search-mode",
+        dest="search_mode",
+        type=str,
+        choices=["greedy", "beam"],
+        default="greedy",
+        help="Decoding strategy: 'greedy' (fast, batched) or 'beam' (slower, per-image beam search)",
+    )
 
     return parser.parse_args()
 
@@ -252,14 +260,16 @@ def main():
     args = parse_arguments()
     
     print("=" * 60)
-    print("OCR Beam Search Inference")
+    print(f"OCR Inference ({args.search_mode} search)")
     print("=" * 60)
     print(f"Images directory: {args.image_dir}")
-    print(f"Labels directory: {args.label_dir}")
+    print(f"Detection labels directory: {args.detection_label_dir}")
     print(f"Checkpoint: {args.checkpoint_path}")
     print(f"Output text file: {args.output_txt}")
     print(f"Device: {args.device}")
-    print(f"Beam size: {args.beam_size}")
+    print(f"Search mode: {args.search_mode}")
+    if args.search_mode == "beam":
+        print(f"Beam size: {args.beam_size}")
     print(f"Process all: {args.process_all}")
     print("=" * 60)
     
@@ -273,7 +283,7 @@ def main():
     print("\nCreating dataset...")
     dataset = ImageDatasetBBox(
         image_dir=args.image_dir,
-        label_dir=args.label_dir,
+        label_dir=args.detection_label_dir,
         vocab=vocab,
         transform=create_transforms(),
         expand_ratio=Config.BBOX_EXPAND_RATIO,
@@ -298,28 +308,27 @@ def main():
     )
     print("Model loaded successfully")
     
-    # Run beam search
-    # run_beam_search(
-    #     model=model,
-    #     dataset=dataset,
-    #     output_txt=args.output_txt,
-    #     beam_size=args.beam_size,
-    #     max_len=args.max_len,
-    #     alpha=args.alpha,
-    #     device=args.device,
-    #     process_all=args.process_all
-    # )
-
-    # Alternatively, run greedy search in batch mode
-    run_greedy_search(
-        model=model,
-        dataloader=dataloader,
-        output_txt=args.output_txt,
-        max_len=args.max_len,
-        alpha=args.alpha,
-        device=args.device,
-        process_all=args.process_all
-    )
+    if args.search_mode == "beam":
+        run_beam_search(
+            model=model,
+            dataset=dataset,
+            output_txt=args.output_txt,
+            beam_size=args.beam_size,
+            max_len=args.max_len,
+            alpha=args.alpha,
+            device=args.device,
+            process_all=args.process_all
+        )
+    else:
+        run_greedy_search(
+            model=model,
+            dataloader=dataloader,
+            output_txt=args.output_txt,
+            max_len=args.max_len,
+            alpha=args.alpha,
+            device=args.device,
+            process_all=args.process_all
+        )
     
     print("=" * 60)
     print("Search complete!")
