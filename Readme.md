@@ -55,9 +55,9 @@ Key config (`config.py`):
 `ocr_inference.py` loads the LitBTTR checkpoint, runs **greedy search** (default) or beam search on each detected bounding box, and writes raw token sequences to a tab-separated text file.
 
 ```bash
-python ocr_inference.py \
+uv run python ocr_inference.py \
   --images datasets/nomnaocr/images \
-  --labels detection/nomnaocr/labels \
+  --detection-labels datasets/nomnaocr/detection_labels \
   --checkpoint my-models/epoch=199-step=19048-val_ExpRate=0.9508.ckpt \
   --output-txt inference_outputs.txt \
   --device cuda:0 \
@@ -73,7 +73,7 @@ Key config: `OCR_BEAM_SIZE = 3`, `OCR_MAX_LEN = 63`, `IMAGE_SIZE = 128`, `BBOX_E
 `ocr_decode.py` reads `inference_outputs.txt`, decodes only **unique** token sequences in parallel (deduplication speeds this step significantly), then maps results back to all image IDs and writes `ocr_results.csv`.
 
 ```bash
-python ocr_decode.py \
+uv run python ocr_decode.py \
   --input-txt inference_outputs.txt \
   --csv ocr_results.csv \
   --num-workers 8
@@ -106,8 +106,8 @@ datasets/nomnaocr/
   images/          ← page images (.jpg)
   line_labels/     ← line-level ground truth (.txt, one label per line)
 
-detection/nomnaocr/
-  labels/          ← YOLO bounding box files produced by detection.py
+datasets/nomnaocr/
+  detection_labels/          ← YOLO bounding box files produced by detection.py
 
 nom-ids/
   vocab_ids.txt    ← token vocabulary
@@ -134,12 +134,19 @@ my-models/
 
 ## Installation
 
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run the following commands from the `nom-ocr-inference` project directory:
+
 ```bash
-git clone https://github.com/ntcuong2103/nom-ids.git
-cd nom-ids
-git switch release
-cd nom-ids-ocr
-pip install -e .
+git clone --branch release https://github.com/ntcuong2103/nom-ids.git nom-ids
+uv sync
+```
+
+`uv sync` creates the project virtual environment and installs all dependencies from `pyproject.toml`, including the local `nom-ids/nom-ids-ocr` package in editable mode. There is no need to activate the environment manually; run pipeline commands through uv, for example:
+
+```bash
+uv run python ocr_inference.py --help
+uv run python ocr_decode.py --help
+uv run python eval.py --help
 ```
 
 ## Notes
