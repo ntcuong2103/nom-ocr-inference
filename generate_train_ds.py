@@ -38,7 +38,7 @@ def align_line_predictions(predictions_list: list, ground_truth_text: str) -> li
         pred_str = predictions_list[i - 1]
         for j in range(1, n + 1):
             gt_char = ground_truth_text[j - 1]
-            if pred_str == gt_char:
+            if gt_char in pred_str:
                 dp[i][j] = 1 + dp[i - 1][j - 1]
             else:
                 dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
@@ -51,7 +51,7 @@ def align_line_predictions(predictions_list: list, ground_truth_text: str) -> li
     while i > 0 and j > 0:
         pred_str = predictions_list[i - 1]
         gt_char = ground_truth_text[j - 1]
-        if pred_str == gt_char:
+        if gt_char in pred_str:
             matched[i - 1] = True
             matched_chars[i - 1] = gt_char
             i -= 1
