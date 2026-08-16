@@ -1,0 +1,34 @@
+[project]
+name = "nom-ocr-inference"
+version = "0.1.0"
+description = "Detection, recognition, decoding, and evaluation pipeline for Nom-IDS characters"
+readme = "Readme.md"
+authors = [
+    { name = "Cuong Tuan Nguyen", email = "ntcuong2103@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "editdistance",
+    "einops",
+    "fastapi",
+    "imagesize",
+    "nom-ids-ocr",
+    "numpy",
+    "opencv-python",
+    "pandas",
+    "pillow",
+    "pytorch-lightning",
+    "torch",
+    "torchmetrics",
+    "torchvision",
+    "tqdm",
+    "ultralytics",
+    "uvicorn[standard]",
+]
+
+[tool.uv.sources]
+nom-ids-ocr = { path = "nom-ids/nom-ids-ocr", editable = true }
+
+[build-system]
+requires = ["uv_build>=0.12.0,<0.13.0"]
+build-backend = "uv_build"

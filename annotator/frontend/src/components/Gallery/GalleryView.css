@@ -1,0 +1,14 @@
+.gallery-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.status {
+  padding: 24px;
+  color: var(--text-muted);
+}
+
+.status.error {
+  color: var(--danger);
+}

@@ -1,0 +1,47 @@
+@font-face {
+  font-family: 'NomNaTong';
+  src: url('./assets/fonts/NomNaTong-Regular.otf') format('opentype');
+  font-display: swap;
+}
+
+:root {
+  --text: #24242b;
+  --text-muted: #6b6375;
+  --bg: #ffffff;
+  --bg-alt: #f5f5f7;
+  --border: #e0e0e5;
+  --accent: #6d28d9;
+  --confirmed: #1a9850;
+  --unconfirmed: #d97706;
+  --danger: #dc2626;
+
+  color-scheme: light;
+  color: var(--text);
+  background: var(--bg);
+  font: 15px/1.4 system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body,
+html,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+.nom {
+  font-family: 'NomNaTong', 'Noto Sans CJK JP', sans-serif;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+input,
+select {
+  font: inherit;
+}

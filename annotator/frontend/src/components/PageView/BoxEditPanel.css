@@ -1,0 +1,84 @@
+.box-edit-panel {
+  width: 260px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  padding: 16px;
+}
+
+.box-edit-panel.empty {
+  color: var(--text-muted);
+}
+
+.box-edit-panel h3 {
+  margin: 0 0 16px;
+  font-size: 15px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.field > span {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.char-input {
+  font-size: 28px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 100%;
+  text-align: center;
+}
+
+.flag-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.flag-toggle button {
+  flex: 1;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 13px;
+}
+
+.flag-toggle button.confirm.active {
+  background: var(--confirmed);
+  border-color: var(--confirmed);
+  color: white;
+}
+
+.flag-toggle button.reject.active {
+  background: var(--unconfirmed);
+  border-color: var(--unconfirmed);
+  color: white;
+}
+
+.saving {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.geometry {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.geometry dt {
+  float: left;
+  width: 50px;
+}
+
+.geometry dd {
+  margin: 0 0 4px 50px;
+}

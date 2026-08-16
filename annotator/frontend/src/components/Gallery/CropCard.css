@@ -1,0 +1,68 @@
+.crop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.crop-card.confirmed {
+  border-left: 3px solid var(--confirmed);
+}
+
+.crop-card.unconfirmed {
+  border-left: 3px solid var(--unconfirmed);
+}
+
+.crop-card img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  background: var(--bg-alt);
+  border-radius: 4px;
+}
+
+.crop-char-input {
+  width: 60px;
+  text-align: center;
+  font-size: 18px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.crop-card-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.crop-card-actions button,
+.crop-card-actions .jump-link {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 0;
+}
+
+.crop-card-actions button.confirm.active {
+  background: var(--confirmed);
+  border-color: var(--confirmed);
+  color: white;
+}
+
+.crop-card-actions button.reject.active {
+  background: var(--unconfirmed);
+  border-color: var(--unconfirmed);
+  color: white;
+}
