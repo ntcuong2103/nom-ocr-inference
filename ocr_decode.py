@@ -24,26 +24,32 @@ def load_vocab_and_ids_dict():
     return base_vocab, ids_dict
 
 
-def _decode_output(args):
+_worker_vocab = None
+
+
+def _init_worker(base_vocab, vocab_dict):
+    """Pool initializer: build the SeqVocab (and its Trie) once per worker process."""
+    global _worker_vocab
+    _worker_vocab = SeqVocab(base_vocab, vocab_dict)
+
+
+def _decode_output(output_str):
     """Helper function for multiprocessing decoding.
-    
+
     Args:
-        args: tuple of (output_str, vocab_dict, base_vocab)
-    
+        output_str: comma-separated token id string
+
     Returns:
-        tuple of (decoded_text, decoded_ids)
+        tuple of (output_str, decoded_text, decoded_ids)
     """
-    output_str, vocab_dict, base_vocab = args
-    
-    # Recreate SeqVocab instance for this process
-    vocab = SeqVocab(base_vocab, vocab_dict)
-    
+    vocab = _worker_vocab
+
     # Convert comma-separated string to list of integers
     output = [int(x) for x in output_str.split(',')]
-    
+
     decoded_text = ''.join(vocab.decode(output))
     decoded_ids = ''.join([vocab.id2char[c] for c in output])
-    
+
     return output_str, decoded_text, decoded_ids
 
 
@@ -59,6 +65,9 @@ def run_decoding(input_txt, output_csv, vocab_dict, base_vocab, num_workers=4):
     
     # get unique output strings
     unique_outputs = ocr_df.output_str.unique()
+    # remove nan values if any
+    unique_outputs = [s for s in unique_outputs if isinstance(s, str)]
+
     unique_count = len(unique_outputs)
     dedup_ratio = len(ocr_df) / unique_count if unique_count > 0 else 1
     print(f"Found {unique_count} unique output strings (deduplication ratio: {dedup_ratio:.2f}x)")
@@ -69,19 +78,13 @@ def run_decoding(input_txt, output_csv, vocab_dict, base_vocab, num_workers=4):
     
     print("\nStage 2: Parallel decoding")
     print("-" * 60)
-    
-    # Prepare arguments for multiprocessing with unique output strings only
-    decode_args = [
-        (output_str, vocab_dict, base_vocab)
-        for output_str in unique_outputs
-    ]
-    
+
     # Decode unique outputs and store results
     decoded_map = {}  # output_str -> (decoded_text, decoded_ids)
-    
-    with Pool(num_workers) as pool:
-        with tqdm(total=len(decode_args), desc="Decoding unique strings", unit="str") as pbar:
-            for output_str, decoded_text, decoded_ids in pool.imap_unordered(_decode_output, decode_args):
+
+    with Pool(num_workers, initializer=_init_worker, initargs=(base_vocab, vocab_dict)) as pool:
+        with tqdm(total=len(unique_outputs), desc="Decoding unique strings", unit="str") as pbar:
+            for output_str, decoded_text, decoded_ids in pool.imap_unordered(_decode_output, unique_outputs):
                 decoded_map[output_str] = (decoded_text, decoded_ids)
                 pbar.update(1)
     
