@@ -2,3 +2,6 @@ nom-ids/
 .lightning_studio/
 detection/
 evaluation_results/
+annotator/frontend/node_modules/
+annotator/frontend/dist/
+__pycache__/
