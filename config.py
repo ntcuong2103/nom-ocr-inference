@@ -12,8 +12,7 @@ class Config:
     LINE_LABELS_ROOT = DATASET_ROOT / "line_labels"
     
     # Detection paths
-    DETECTION_ROOT = Path("detection/nomnaocr")
-    DETECTION_LABELS = DETECTION_ROOT / "labels"
+    DETECTION_LABELS = DATASET_ROOT / "detection_labels"
     
     # Model paths
     MODELS_ROOT = Path("my-models")

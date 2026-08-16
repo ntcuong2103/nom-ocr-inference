@@ -61,12 +61,13 @@ def run_decoding(input_txt, output_csv, vocab_dict, base_vocab, num_workers=4):
 
     ocr_df = pd.read_csv(input_txt, sep='\t', header=None, names=['image_id', 'output_str'])
 
+    # drop nan
+    ocr_df = ocr_df.dropna(subset=['output_str'])
+
     print(f"Loaded {len(ocr_df)} outputs")
     
     # get unique output strings
     unique_outputs = ocr_df.output_str.unique()
-    # remove nan values if any
-    unique_outputs = [s for s in unique_outputs if isinstance(s, str)]
 
     unique_count = len(unique_outputs)
     dedup_ratio = len(ocr_df) / unique_count if unique_count > 0 else 1

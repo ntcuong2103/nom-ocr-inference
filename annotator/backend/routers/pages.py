@@ -54,8 +54,8 @@ def patch_box(volume: str, page: str, box_id: int, body: BoxPatchIn):
         if any(c.isspace() for c in character):
             raise HTTPException(400, "character must not contain whitespace")
 
-    if body.selection_flag is not None and body.selection_flag not in (0, 1):
-        raise HTTPException(400, "selection_flag must be 0 or 1")
+    if body.selection_flag is not None and not (0.0 <= body.selection_flag <= 1.0):
+        raise HTTPException(400, "selection_flag must be between 0 and 1")
 
     try:
         row = apply_edit(

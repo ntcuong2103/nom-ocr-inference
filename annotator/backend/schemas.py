@@ -10,12 +10,12 @@ class BoxOut(BaseModel):
     y: float
     w: float
     h: float
-    selection_flag: int
+    selection_flag: float
 
 
 class BoxPatchIn(BaseModel):
     character: str | None = None
-    selection_flag: int | None = None
+    selection_flag: float | None = None
 
 
 class PageOut(BaseModel):
@@ -49,7 +49,7 @@ class CropItem(BaseModel):
     page: str
     box_id: int
     character: str
-    selection_flag: int
+    selection_flag: float
     crop_url: str
 
 

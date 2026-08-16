@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/crops", tags=["crops"])
 
 @router.get("", response_model=CropsPage)
 def list_crops(
-    selection_flag: int | None = Query(default=None, ge=0, le=1),
+    selection_flag: float | None = Query(default=None, ge=0, le=1),
     character: str | None = None,
     volume: str | None = None,
     page: str | None = None,

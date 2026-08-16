@@ -22,6 +22,7 @@ def process_ocr_results(ocr_csv_path: str) -> pd.DataFrame:
     )
     df["bbox_id"] = df["bbox_id"].astype(int)
     df["predicted_text"] = df["predicted_text"].fillna("")
+    df["predicted_ids"] = df["predicted_ids"].fillna("")
     return df
 
 

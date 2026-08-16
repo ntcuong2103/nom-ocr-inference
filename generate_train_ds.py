@@ -14,63 +14,112 @@ from tqdm import tqdm
 
 from config import Config
 from utils import process_ocr_results, parse_line_labels, is_inside, load_yolo_bboxes
-from lcs_util import lcs_string
+from lcs_util import edit_distance
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
-def align_line_predictions(predictions_list: list, ground_truth_text: str) -> list:
-    """Align a list of predicted strings (one per bbox) with the ground truth text.
-    
+def load_ids_dict() -> dict:
+    """Load character -> IDS decomposition string mapping used to encode ground-truth text."""
+    ids_dict = {}
+    with open(Config.IDS_EXP, 'r', encoding='utf-8') as f:
+        for line in f:
+            parts = line.rstrip('\n').split('\t')
+            if len(parts) == 2:
+                ids_dict[parts[0]] = parts[1]
+    return ids_dict
+
+
+def align_line_predictions(
+    predicted_ids_list: list,
+    predicted_text_list: list,
+    gt_ids_list: list,
+    ground_truth_text: str,
+) -> list:
+    """Align predicted IDS strings (one per bbox, in reading order) against the ground-truth
+    line, itself encoded as one IDS string per ground-truth character.
+
+    The pairwise cost between a bbox and a ground-truth character is the edit distance between
+    their IDS strings, not a binary substring test - so a bbox whose predicted decomposition is
+    only partially wrong still aligns to the right ground-truth position instead of dropping out
+    of the alignment. Backtracking through this DP is what recovers the actual bbox <-> ground
+    truth correspondence, which is what lets incorrect boxes still get the correct label attached
+    (with selection=0) instead of falling back to their own noisy prediction.
+
     Args:
-        predictions_list: List of predicted strings (e.g. ["明", "日"])
-        ground_truth_text: Ground truth line text (e.g. "明日")
-        
+        predicted_ids_list: predicted IDS string per bbox - the alignment signal
+        predicted_text_list: predicted composed-character text per bbox - fallback label only,
+            used when a bbox can't be aligned to any ground-truth character
+        gt_ids_list: ground-truth IDS string per ground-truth character
+        ground_truth_text: ground-truth line text, same length/order as gt_ids_list
+
     Returns:
-        List of tuples (is_matched, matched_char) corresponding to each prediction in predictions_list
+        List of length len(predicted_ids_list) of (is_exact_match, label_char):
+        - is_exact_match: True iff the aligned ground-truth character's IDS is identical to the
+          prediction's IDS (edit distance 0)
+        - label_char: the aligned ground-truth character, or - if this bbox aligned to none -
+          the bbox's own predicted text (or "" if it has none)
     """
-    m = len(predictions_list)
-    n = len(ground_truth_text)
-    
+    m = len(predicted_ids_list)
+    n = len(gt_ids_list)
+
+    cost = [[edit_distance(predicted_ids_list[i], gt_ids_list[j]) for j in range(n)] for i in range(m)]
+
+    # dp[i][j]: min total edit distance aligning predictions[:i] with gt[:j]. Leaving a
+    # prediction or a ground-truth character unaligned costs the length of its own IDS string,
+    # so gaps are commensurate with substitutions instead of being free or infinitely cheap.
     dp = [[0] * (n + 1) for _ in range(m + 1)]
     for i in range(1, m + 1):
-        pred_str = predictions_list[i - 1]
+        dp[i][0] = dp[i - 1][0] + len(predicted_ids_list[i - 1])
+    for j in range(1, n + 1):
+        dp[0][j] = dp[0][j - 1] + len(gt_ids_list[j - 1])
+
+    for i in range(1, m + 1):
         for j in range(1, n + 1):
-            gt_char = ground_truth_text[j - 1]
-            if gt_char in pred_str:
-                dp[i][j] = 1 + dp[i - 1][j - 1]
-            else:
-                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
-                
-    # Backtrack to find the matches
-    matched = [False] * m
-    matched_chars = [pred_str[0] if len(pred_str) > 0 else "" for pred_str in predictions_list]
-    
+            dp[i][j] = min(
+                dp[i - 1][j - 1] + cost[i - 1][j - 1],          # align prediction i with gt char j
+                dp[i - 1][j] + len(predicted_ids_list[i - 1]),  # prediction i unaligned (extra box)
+                dp[i][j - 1] + len(gt_ids_list[j - 1]),         # gt char j unaligned (missed box)
+            )
+
+    # Backtrack to recover which prediction aligns to which ground-truth character.
+    aligned_gt_index = [None] * m
     i, j = m, n
     while i > 0 and j > 0:
-        pred_str = predictions_list[i - 1]
-        gt_char = ground_truth_text[j - 1]
-        if gt_char in pred_str:
-            matched[i - 1] = True
-            matched_chars[i - 1] = gt_char
+        if dp[i][j] == dp[i - 1][j - 1] + cost[i - 1][j - 1]:
+            aligned_gt_index[i - 1] = j - 1
             i -= 1
             j -= 1
-        elif dp[i - 1][j] > dp[i][j - 1]:
+        elif dp[i][j] == dp[i - 1][j] + len(predicted_ids_list[i - 1]):
             i -= 1
         else:
             j -= 1
-            
-    return list(zip(matched, matched_chars))
+    # any predictions left with i > 0 here were never aligned (j hit 0 first) - fine, they
+    # default to None below.
+
+    result = []
+    for idx in range(m):
+        gt_idx = aligned_gt_index[idx]
+        if gt_idx is not None:
+            match_score = max(len(predicted_ids_list[idx]), len(gt_ids_list[gt_idx])) - cost[idx][gt_idx]
+            match_score = match_score / max(len(predicted_ids_list[idx]), len(gt_ids_list[gt_idx])) if max(len(predicted_ids_list[idx]), len(gt_ids_list[gt_idx])) > 0 else 0
+            result.append((match_score, ground_truth_text[gt_idx]))
+        else:
+            pred_text = predicted_text_list[idx]
+            result.append((0, pred_text[0] if len(pred_text) > 0 else ""))
+
+    return result
 
 
-def process_page(page_id: str, page_df_dict: dict):
+def process_page(page_id: str, page_df_dict: dict, ids_dict: dict):
     """Process a single page and match predictions to ground truth.
-    
+
     Args:
         page_id: Page identifier
         page_df_dict: Dictionary mapping bbox_id to prediction data for this page
-        
+        ids_dict: Character -> IDS decomposition string mapping, used to encode ground-truth text
+
     Returns:
         List of tuples with predicted characters, bboxes, and selection flags
     """
@@ -105,14 +154,20 @@ def process_page(page_id: str, page_df_dict: dict):
         bboxes_ids = line_to_bboxes[line_idx]
         bboxes_ids = sorted(bboxes_ids, key=lambda bid: bbox_center[bid][1])
 
-        predictions_list = []
+        predictions_ids_list = []
+        predictions_text_list = []
         for bbox_id in bboxes_ids:
-            pred_text = page_df_dict[bbox_id]["predicted_text"] if bbox_id in page_df_dict else ""
-            predictions_list.append(pred_text)
+            box_pred = page_df_dict.get(bbox_id, {})
+            predictions_ids_list.append(box_pred.get("predicted_ids", ""))
+            predictions_text_list.append(box_pred.get("predicted_text", ""))
 
-        alignment = align_line_predictions(predictions_list, line_label["label"])
+        gt_ids_list = [ids_dict.get(c, c) for c in line_label["label"]]
+
+        alignment = align_line_predictions(
+            predictions_ids_list, predictions_text_list, gt_ids_list, line_label["label"]
+        )
         for bid, (is_matched, matched_char) in zip(bboxes_ids, alignment):
-            bbox_to_selection[bid] = 1 if is_matched else 0
+            bbox_to_selection[bid] = is_matched
             bbox_to_selected_char[bid] = matched_char
 
     bboxes_gt = []
@@ -124,9 +179,19 @@ def process_page(page_id: str, page_df_dict: dict):
             if line_idx is not None:
                 selection = bbox_to_selection.get(bbox_id, 0)
                 selected_char = bbox_to_selected_char.get(bbox_id, "")
-                bboxes_gt.append((selected_char, bboxes_fp[bbox_id], selection))
+                bboxes_gt.append((selected_char, bboxes_fp[bbox_id], selection, bbox_id))
 
     return bboxes_gt
+
+_worker_ids_dict = None
+
+
+def _init_worker(ids_dict: dict):
+    """Pool initializer: stash the IDS dict once per worker process instead of pickling
+    and sending it on every submit() call (it has ~100k entries)."""
+    global _worker_ids_dict
+    _worker_ids_dict = ids_dict
+
 
 def process_single_page(page_id, page_df_dict):
     """Wrapper for processing a single page."""
@@ -135,16 +200,16 @@ def process_single_page(page_id, page_df_dict):
         logger.info(f"Skipping {page_id} (already processed)")
         return
 
-    # create output directory 
+    # create output directory
     page_out_path.parent.mkdir(parents=True, exist_ok=True)
     logger.info(f"Processing page: {page_id}")
     try:
-        bboxes_gt = process_page(page_id, page_df_dict)
+        bboxes_gt = process_page(page_id, page_df_dict, _worker_ids_dict)
         # write to file
         with open(page_out_path, "w", encoding="utf-8") as f:
-            for pred, bbox, selection in bboxes_gt:
+            for pred, bbox, selection, bbox_id in bboxes_gt:
                 bbox_str = " ".join([f"{coord:.6f}" for coord in bbox])
-                f.write(f"{pred} {bbox_str} {selection}\n")
+                f.write(f"{pred} {bbox_str} {selection} {bbox_id}\n")
     except Exception as e:
         logger.error(f"Error processing {page_id}: {e}")
 
@@ -158,7 +223,7 @@ def main():
     logger.setLevel(getattr(logging, args.log_level.upper()))
     
     df = process_ocr_results(str(Config.OCR_RESULTS_CSV))
-    Config.OUTPUT_ROOT = Path("nomnaocr_labels_v1")
+    Config.OUTPUT_ROOT = Path("datasets/nomnaocr/pseudo_labels_v0.2")
     Config.OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     
     page_ids = df["page_id"].unique()
@@ -170,11 +235,14 @@ def main():
         page_df = df[df["page_id"] == page_id]
         # Create a dict with bbox_id as key for O(1) lookup
         page_data[page_id] = {
-            row["bbox_id"]: {"predicted_text": row["predicted_text"]}
+            row["bbox_id"]: {"predicted_text": row["predicted_text"], "predicted_ids": row["predicted_ids"]}
             for _, row in page_df.iterrows()
         }
-    
-    with ProcessPoolExecutor(max_workers=32) as executor:
+
+    ids_dict = load_ids_dict()
+    logger.info(f"Loaded IDS dictionary ({len(ids_dict)} entries)")
+
+    with ProcessPoolExecutor(max_workers=32, initializer=_init_worker, initargs=(ids_dict,)) as executor:
         futures = {executor.submit(process_single_page, page_id, page_data[page_id]): page_id for page_id in page_ids}
         for future in tqdm(as_completed(futures), total=len(futures), desc="Processing pages"):
             page_id = futures[future]

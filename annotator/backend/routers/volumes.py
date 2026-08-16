@@ -16,7 +16,7 @@ def list_volumes():
             num_pages=("page", "nunique"),
             num_boxes=("box_id", "size"),
             num_confirmed=("selection_flag", lambda s: int((s == 1).sum())),
-            num_unconfirmed=("selection_flag", lambda s: int((s == 0).sum())),
+            num_unconfirmed=("selection_flag", lambda s: int((s != 1).sum())),
         )
         .to_dict("index")
     )
@@ -42,7 +42,7 @@ def list_pages(volume: str):
         .agg(
             num_boxes=("box_id", "size"),
             num_confirmed=("selection_flag", lambda s: int((s == 1).sum())),
-            num_unconfirmed=("selection_flag", lambda s: int((s == 0).sum())),
+            num_unconfirmed=("selection_flag", lambda s: int((s != 1).sum())),
         )
         .to_dict("index")
     )

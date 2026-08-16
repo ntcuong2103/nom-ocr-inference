@@ -2,6 +2,9 @@
 
 Format: ``<character> <x> <y> <w> <h> <selection_flag> <box_id>``
 x/y/w/h are YOLO-normalized (center x, center y, width, height).
+selection_flag is a float in [0, 1] - a match-confidence score where 1
+means an exact match; anything less is a partial/no match still awaiting
+review. Manual review edits always write exactly 0 or 1.
 
 The character field may be an empty string (a detected-but-unlabeled box).
 A naive ``line.split()`` silently drops that leading empty field and
@@ -22,7 +25,7 @@ class Box:
     y: float
     w: float
     h: float
-    selection_flag: int
+    selection_flag: float
 
 
 def parse_label_line(raw: str, line_index: int) -> Box | None:
@@ -32,7 +35,7 @@ def parse_label_line(raw: str, line_index: int) -> Box | None:
     *char_parts, x_s, y_s, w_s, h_s, flag_s, box_id_s = parts
     try:
         x, y, w, h = float(x_s), float(y_s), float(w_s), float(h_s)
-        selection_flag = int(flag_s)
+        selection_flag = float(flag_s)
         box_id = int(box_id_s)
     except ValueError:
         return None
@@ -52,7 +55,7 @@ def parse_label_line(raw: str, line_index: int) -> Box | None:
 def format_label_line(box: Box) -> str:
     return (
         f"{box.character} {box.x:.6f} {box.y:.6f} {box.w:.6f} {box.h:.6f} "
-        f"{box.selection_flag} {box.box_id}\n"
+        f"{box.selection_flag:.6f} {box.box_id}\n"
     )
 
 

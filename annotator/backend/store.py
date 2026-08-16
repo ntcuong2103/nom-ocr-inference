@@ -28,7 +28,7 @@ def apply_edit(
     page: str,
     box_id: int,
     character: str | None = None,
-    selection_flag: int | None = None,
+    selection_flag: float | None = None,
 ) -> dict:
     with _write_lock:
         page_df = index.page_rows(volume, page)
